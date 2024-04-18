@@ -3,14 +3,13 @@ module bookshop::bookshop {
     //==============================================================================================
     //                                  Dependencies
     //==============================================================================================
-    use sui::object::{Self, UID, ID};
     use sui::tx_context::{Self, TxContext, sender};
     use sui::coin::{Self, Coin};
     use sui::balance::{Self, Balance};
     use sui::sui::SUI;
-    use sui::clock::{Self, Clock};
+    use sui::clock::{Self, Clock, timestamp_ms};
     use std::string::{Self, String};
-    use sui::event;
+
 
     //==============================================================================================
     //                                  Constants
@@ -168,68 +167,31 @@ module bookshop::bookshop {
         transfer::share_object(shop);
     }
 
-    // /*
-    //     update book name, it will emit AddBookEvent event
-    //     @param adminCap: the admin role capability controll
-    //     @param name: book name
-    //     @param clock: clock for timestamp
-    //     @param ctx: The transaction context.
-    // */
-    // public fun update_bookinfo_name(_: &AdminCap, bookinfo: &mut BookInfo, name: String, clock: &Clock, _ctx: &mut TxContext) {
-    //     assert!(!string::is_empty(&name), EBookNameInvalid);
-    //     assert!(bookinfo.name != name, EBookNameNotChanged);
+    /*
+        update book name, it will emit AddBookEvent event
+        @param adminCap: the admin role capability controll
+        @param name: book name
+        @param clock: clock for timestamp
+        @param ctx: The transaction context.
+    */
+    public fun new_name(self: &mut Book, name: String, clock: &Clock, ctx: &mut TxContext) {
+        self.name = name;
+        self.update_at = timestamp_ms(clock);
+    }
 
-    //     event::emit(UpdateBookNameEvent{
-    //         book_id : object::uid_to_inner(&bookinfo.id),
-    //         oldname: bookinfo.name,
-    //         name: name,
-    //     });
-
-    //     bookinfo.name = name;
-    //     bookinfo.update_at = clock::timestamp_ms(clock);
-    // }
-
-    // /*
-    //     update book price, it will emit UpdateBookPriceEvent event
-    //     @param adminCap: the admin role capability controll
-    //     @param bookinfo: bookinfo struct
-    //     @param price: book price
-    //     @param clock: clock for timestamp
-    //     @param ctx: The transaction context.
-    // */
-    // public fun update_bookinfo_price(_: &AdminCap, bookinfo: &mut BookInfo, price: u64, clock: &Clock, _ctx: &mut TxContext) {
-    //     assert!(bookinfo.price != price, EBookPriceNotChanged);
-
-    //     event::emit(UpdateBookPriceEvent{
-    //         book_id : object::uid_to_inner(&bookinfo.id),
-    //         oldprice: bookinfo.price,
-    //         price: price,
-    //     });
-
-    //     bookinfo.price = price;
-    //     bookinfo.update_at = clock::timestamp_ms(clock);
-    // }
-
-    // /*
-    //     update book count, it will emit UpdateBookCountEvent event
-    //     @param adminCap: the admin role capability controll
-    //     @param bookinfo: bookinfo struct
-    //     @param count: book count
-    //     @param clock: clock for timestamp
-    //     @param ctx: The transaction context.
-    // */
-    // public fun update_bookinfo_count(_: &AdminCap, bookinfo: &mut BookInfo, count: u64, clock: &Clock, _ctx: &mut TxContext) {
-    //     assert!(bookinfo.count != count, EBookCountNotChanged);
-
-    //     event::emit(UpdateBookCountEvent{
-    //         book_id : object::uid_to_inner(&bookinfo.id),
-    //         oldcount: bookinfo.count,
-    //         count: count,
-    //     });
-
-    //     bookinfo.count = count;
-    //     bookinfo.update_at = clock::timestamp_ms(clock);
-    // }
+    /*
+        update book price, it will emit UpdateBookPriceEvent event
+        @param adminCap: the admin role capability controll
+        @param bookinfo: bookinfo struct
+        @param price: book price
+        @param clock: clock for timestamp
+        @param ctx: The transaction context.
+    */
+    public fun new_price(self: &mut Book, price: u64, clock: &Clock, _ctx: &mut TxContext) {
+        assert!(self.price != price, EBookPriceNotChanged);
+        self.price = price;
+        self.update_at = clock::timestamp_ms(clock);
+    }
 
     // /*
     //     update book state on sale, it will emit UpdateBookStateEvent event

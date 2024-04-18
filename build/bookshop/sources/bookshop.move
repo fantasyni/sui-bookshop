@@ -8,7 +8,7 @@ module bookshop::bookshop {
     use sui::coin::{Self, Coin};
     use sui::balance::{Self, Balance};
     use sui::sui::SUI;
-    use sui::clock::{Self, Clock};
+    use sui::clock::{Self, Clock, timestamp_ms};
     use std::string::{Self, String};
     use sui::event;
 
@@ -168,26 +168,17 @@ module bookshop::bookshop {
         transfer::share_object(shop);
     }
 
-    // /*
-    //     update book name, it will emit AddBookEvent event
-    //     @param adminCap: the admin role capability controll
-    //     @param name: book name
-    //     @param clock: clock for timestamp
-    //     @param ctx: The transaction context.
-    // */
-    // public fun update_bookinfo_name(_: &AdminCap, bookinfo: &mut BookInfo, name: String, clock: &Clock, _ctx: &mut TxContext) {
-    //     assert!(!string::is_empty(&name), EBookNameInvalid);
-    //     assert!(bookinfo.name != name, EBookNameNotChanged);
-
-    //     event::emit(UpdateBookNameEvent{
-    //         book_id : object::uid_to_inner(&bookinfo.id),
-    //         oldname: bookinfo.name,
-    //         name: name,
-    //     });
-
-    //     bookinfo.name = name;
-    //     bookinfo.update_at = clock::timestamp_ms(clock);
-    // }
+    /*
+        update book name, it will emit AddBookEvent event
+        @param adminCap: the admin role capability controll
+        @param name: book name
+        @param clock: clock for timestamp
+        @param ctx: The transaction context.
+    */
+    public fun update_bookinfo_name(self: &mut Book, name: String, clock: &Clock, ctx: &mut TxContext) {
+        self.name = name;
+        self.update_at = timestamp_ms(clock);
+    }
 
     // /*
     //     update book price, it will emit UpdateBookPriceEvent event
