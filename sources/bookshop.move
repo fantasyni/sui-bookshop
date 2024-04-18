@@ -9,6 +9,8 @@ module bookshop::bookshop {
     use sui::sui::SUI;
     use sui::clock::{Self, Clock, timestamp_ms};
     use std::string::{Self, String};
+    use sui::dynamic_object_field as dof;
+    use sui::dynamic_field as df;
 
 
     //==============================================================================================
@@ -46,8 +48,11 @@ module bookshop::bookshop {
         BOOKSHOP is the one time witness for module init
     */
     public struct BOOKSHOP has drop {
-
     }
+
+    public struct Item has store, copy, drop { id: ID }
+
+    public struct Listing has store, copy, drop { id: ID, is_exclusive: bool }
 
     /*
         ShopInfo manages the shop informations, now contains the payment address for consumers
@@ -200,83 +205,44 @@ module bookshop::bookshop {
     //     @param clock: clock for timestamp
     //     @param ctx: The transaction context.
     // */
-    // public fun put_on_sale_bookinfo(_: &AdminCap, bookinfo: &mut BookInfo, clock: &Clock, _ctx: &mut TxContext) {
-    //     assert!(bookinfo.state != BOOK_STATE_ON_SALE, EBookStateNotChanged);
+    public fun list(_: &AdminCap, self: &mut Shop, book: Book, price: u64) {
+        let id_ = book.inner;
+        place_internal(self, book);
 
-    //     event::emit(UpdateBookStateEvent{
-    //         book_id : object::uid_to_inner(&bookinfo.id),
-    //         oldstate: bookinfo.state,
-    //         state: BOOK_STATE_ON_SALE,
-    //     });
-    //     bookinfo.state = BOOK_STATE_ON_SALE;
-    //     bookinfo.update_at = clock::timestamp_ms(clock);
-    // }
+        df::add(&mut self.id, Listing { id: id_, is_exclusive: false }, price);
+    }
 
-    // /*
-    //     update book state off sale, it will emit UpdateBookStateEvent event
-    //     @param adminCap: the admin role capability controll
-    //     @param bookinfo: bookinfo struct
-    //     @param clock: clock for timestamp
-    //     @param ctx: The transaction context.
-    // */
-    // public fun put_off_sale_bookinfo(_: &AdminCap, bookinfo: &mut BookInfo, clock: &Clock, _ctx: &mut TxContext) {
-    //     assert!(bookinfo.state != BOOK_STATE_OFF_SALE, EBookStateNotChanged);
+    /*
+        update book state off sale, it will emit UpdateBookStateEvent event
+        @param adminCap: the admin role capability controll
+        @param bookinfo: bookinfo struct
+        @param clock: clock for timestamp
+        @param ctx: The transaction context.
+    */
+    public fun delist(_: &AdminCap, self: &mut Shop, id: ID) {
+    
+        df::remove<Listing, u64>(&mut self.id, Listing { id, is_exclusive: false });
+    }
 
-    //     event::emit(UpdateBookStateEvent{
-    //         book_id : object::uid_to_inner(&bookinfo.id),
-    //         oldstate: bookinfo.state,
-    //         state: BOOK_STATE_OFF_SALE,
-    //     });
-    //     bookinfo.state = BOOK_STATE_OFF_SALE;
-    //     bookinfo.update_at = clock::timestamp_ms(clock);
-    // }
+    /*
+        buy book function, it will emit BuyBookEvent event
+        @param shopInfo: ShopInfo struct
+        @param bookinfo: bookinfo struct
+        @param sui: sui payed to buy book
+        @param amount: buy book amount
+        @param clock: clock for timestamp
+        @param ctx: The transaction context.
+    */
+    public fun purchase(self: &mut Shop, id: ID, payment: Coin<SUI>) : Book {
+        let price = df::remove<Listing, u64>(&mut self.id, Listing { id, is_exclusive: false });
+        let item = dof::remove<Item, Book>(&mut self.id, Item { id });
 
-    // /*
-    //     buy book function, it will emit BuyBookEvent event
-    //     @param shopInfo: ShopInfo struct
-    //     @param bookinfo: bookinfo struct
-    //     @param sui: sui payed to buy book
-    //     @param amount: buy book amount
-    //     @param clock: clock for timestamp
-    //     @param ctx: The transaction context.
-    // */
-    // public fun buy_book(shopInfo: &ShopInfo, bookinfo: &mut BookInfo, sui: Coin<SUI>, amount: u64, clock: &Clock, ctx: &mut TxContext) {
-    //     assert!(bookinfo.state == BOOK_STATE_ON_SALE, EBookNotOnSale);
-    //     assert!(amount > 0, EBookBuyAmountInvalid);
-    //     assert!(bookinfo.count >= amount, EBookAmountNotEnough);
+        self.item_count = self.item_count - 1;
+        assert!(price == payment.value(), EBookBuyAmountInvalid);
+        coin::put(&mut self.balance, payment);
 
-    //     let sui_amount: u64 = coin::value<SUI>(&sui);
-    //     assert!(sui_amount > 0, EBookBuySuiAmountInvalid);
-
-    //     let need_pay: u64 = bookinfo.price * amount;
-    //     let time_stamp: u64 = clock::timestamp_ms(clock);
-    //     assert!(need_pay <= sui_amount, EBuyBookSuiNotEnough);
-    //     let sender_address: address = tx_context::sender(ctx);
-
-    //     bookinfo.count = bookinfo.count - amount;
-    //     let mut sui_balance = coin::into_balance(sui);
-
-    //     if (sui_amount > need_pay) {
-    //         let left_balance = balance::split(&mut sui_balance, sui_amount - need_pay);
-    //         transfer::public_transfer(coin::from_balance(left_balance, ctx), sender_address);
-    //     };
-
-    //     transfer::public_transfer(coin::from_balance(sui_balance, ctx), shopInfo.pay_address);
-
-    //     let Book = Book {
-    //         id: object::new(ctx),
-    //         book_id: object::uid_to_inner(&bookinfo.id),
-    //         book_count: amount,
-    //         create_at: time_stamp
-    //     };
-    //     transfer::transfer(Book, sender_address);
-
-    //     event::emit(BuyBookEvent{
-    //         book_id : object::uid_to_inner(&bookinfo.id),
-    //         book_count: amount,
-    //         create_at: time_stamp
-    //     });
-    // }
+        item
+    }
 
     // /*
     //     get book id
@@ -367,6 +333,11 @@ module bookshop::bookshop {
     // public fun GetBookId(Book: &Book): ID {
     //     Book.book_id
     // }
+
+    fun place_internal(self: &mut Shop, book: Book) {
+        self.item_count = self.item_count + 1;
+        dof::add(&mut self.id, Item { id: object::id(&book) }, book)
+    }
 
     #[test_only]
     public fun init_for_testing(ctx: &mut TxContext) {
