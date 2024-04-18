@@ -3,35 +3,21 @@ module bookshop::bookshop {
     //==============================================================================================
     //                                  Dependencies
     //==============================================================================================
-    use sui::tx_context::{Self, TxContext, sender};
+    use sui::tx_context::{sender};
     use sui::coin::{Self, Coin};
     use sui::balance::{Self, Balance};
     use sui::sui::SUI;
     use sui::clock::{Self, Clock, timestamp_ms};
-    use std::string::{Self, String};
+    use std::string::{String};
     use sui::dynamic_object_field as dof;
     use sui::dynamic_field as df;
-
-
-    //==============================================================================================
-    //                                  Constants
-    //==============================================================================================
-    const BOOK_STATE_ON_SALE: u8 = 1;
-    const BOOK_STATE_OFF_SALE: u8 = 2;
 
     //==============================================================================================
     //                                  Error codes
     //==============================================================================================
-    const EBookNameInvalid: u64 = 1;
-    const EBuyBookSuiNotEnough: u64 = 2;
-    const EBookNotOnSale: u64 = 3;
-    const EBookAmountNotEnough: u64 = 4;
-    const EBookBuyAmountInvalid: u64 = 5;
-    const EBookBuySuiAmountInvalid: u64 = 6;
-    const EBookNameNotChanged: u64 = 7;
-    const EBookPriceNotChanged: u64 = 8;
-    const EBookCountNotChanged: u64 = 9;
-    const EBookStateNotChanged: u64 = 10;
+
+    const EBookBuyAmountInvalid: u64 = 0;
+    const EBookPriceNotChanged: u64 = 1;
 
     //==============================================================================================
     //                                  Module structs
@@ -78,74 +64,8 @@ module bookshop::bookshop {
         inner: ID,
         name: String,
         price: u64,
-        count: u64,
         create_at: u64,
         update_at: u64,
-        state: u8,
-    }
-
-    //==============================================================================================
-    //                                  Event structs
-    //==============================================================================================
-    
-    /*
-        Event emitted when update book name event happened.
-            - book_id: the id of the bookinfo.
-            - oldname: book old name.
-            - name: book name.
-    */
-    public struct UpdateBookNameEvent has copy, drop {
-        book_id: ID,
-        oldname: String,
-        name: String,
-    }
-
-    /*
-        Event emitted when update book price event happened.
-            - book_id: the id of the bookinfo.
-            - oldprice: book old price.
-            - price: book price.
-    */
-    public struct UpdateBookPriceEvent has copy, drop {
-        book_id: ID,
-        oldprice: u64,
-        price: u64,
-    }
-
-    /*
-        Event emitted when update book count event happened.
-            - book_id: the id of the bookinfo.
-            - oldcount: book old count.
-            - count: book count.
-    */
-    public struct UpdateBookCountEvent has copy, drop {
-        book_id: ID,
-        oldcount: u64,
-        count: u64,
-    }
-
-    /*
-        Event emitted when update book state event happened.
-            - book_id: the id of the bookinfo.
-            - oldstate: book old state.
-            - state: book state.
-    */
-    public struct UpdateBookStateEvent has copy, drop {
-        book_id: ID,
-        oldstate: u8,
-        state: u8,
-    }
-
-    /*
-        Event emitted when buy book event happened.
-            - book_id: the id of the bookinfo.
-            - book_count: buy book amount.
-            - create_at: buy book timestamp.
-    */
-    public struct BuyBookEvent has copy, drop {
-        book_id: ID,
-        book_count: u64,
-        create_at: u64,
     }
 
     //==============================================================================================
@@ -172,6 +92,27 @@ module bookshop::bookshop {
         transfer::share_object(shop);
     }
 
+    public fun new(
+        _: &AdminCap,
+        name_: String,
+        price: u64,
+        c: &Clock,
+        ctx: &mut TxContext
+    ) : Book {
+        let id_ = object::new(ctx);
+        let inner_ = object::uid_to_inner(&id_);
+
+        let book = Book {
+            id: id_,
+            inner: inner_,
+            name: name_,
+            price: price,
+            create_at: timestamp_ms(c),
+            update_at: timestamp_ms(c)
+        };
+        book
+    }
+
     /*
         update book name, it will emit AddBookEvent event
         @param adminCap: the admin role capability controll
@@ -179,7 +120,7 @@ module bookshop::bookshop {
         @param clock: clock for timestamp
         @param ctx: The transaction context.
     */
-    public fun new_name(self: &mut Book, name: String, clock: &Clock, ctx: &mut TxContext) {
+    public fun new_name(self: &mut Book, name: String, clock: &Clock) {
         self.name = name;
         self.update_at = timestamp_ms(clock);
     }

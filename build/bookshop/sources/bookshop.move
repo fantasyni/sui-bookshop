@@ -3,35 +3,22 @@ module bookshop::bookshop {
     //==============================================================================================
     //                                  Dependencies
     //==============================================================================================
-    use sui::tx_context::{Self, TxContext, sender};
+    use sui::tx_context::{sender};
     use sui::coin::{Self, Coin};
     use sui::balance::{Self, Balance};
     use sui::sui::SUI;
     use sui::clock::{Self, Clock, timestamp_ms};
-    use std::string::{Self, String};
+    use std::string::{String};
     use sui::dynamic_object_field as dof;
     use sui::dynamic_field as df;
-
-
-    //==============================================================================================
-    //                                  Constants
-    //==============================================================================================
-    const BOOK_STATE_ON_SALE: u8 = 1;
-    const BOOK_STATE_OFF_SALE: u8 = 2;
 
     //==============================================================================================
     //                                  Error codes
     //==============================================================================================
-    const EBookNameInvalid: u64 = 1;
-    const EBuyBookSuiNotEnough: u64 = 2;
-    const EBookNotOnSale: u64 = 3;
-    const EBookAmountNotEnough: u64 = 4;
-    const EBookBuyAmountInvalid: u64 = 5;
-    const EBookBuySuiAmountInvalid: u64 = 6;
-    const EBookNameNotChanged: u64 = 7;
-    const EBookPriceNotChanged: u64 = 8;
-    const EBookCountNotChanged: u64 = 9;
-    const EBookStateNotChanged: u64 = 10;
+
+    const EBookBuyAmountInvalid: u64 = 0;
+    const EBookPriceNotChanged: u64 = 1;
+
 
     //==============================================================================================
     //                                  Module structs
@@ -78,74 +65,8 @@ module bookshop::bookshop {
         inner: ID,
         name: String,
         price: u64,
-        count: u64,
         create_at: u64,
         update_at: u64,
-        state: u8,
-    }
-
-    //==============================================================================================
-    //                                  Event structs
-    //==============================================================================================
-    
-    /*
-        Event emitted when update book name event happened.
-            - book_id: the id of the bookinfo.
-            - oldname: book old name.
-            - name: book name.
-    */
-    public struct UpdateBookNameEvent has copy, drop {
-        book_id: ID,
-        oldname: String,
-        name: String,
-    }
-
-    /*
-        Event emitted when update book price event happened.
-            - book_id: the id of the bookinfo.
-            - oldprice: book old price.
-            - price: book price.
-    */
-    public struct UpdateBookPriceEvent has copy, drop {
-        book_id: ID,
-        oldprice: u64,
-        price: u64,
-    }
-
-    /*
-        Event emitted when update book count event happened.
-            - book_id: the id of the bookinfo.
-            - oldcount: book old count.
-            - count: book count.
-    */
-    public struct UpdateBookCountEvent has copy, drop {
-        book_id: ID,
-        oldcount: u64,
-        count: u64,
-    }
-
-    /*
-        Event emitted when update book state event happened.
-            - book_id: the id of the bookinfo.
-            - oldstate: book old state.
-            - state: book state.
-    */
-    public struct UpdateBookStateEvent has copy, drop {
-        book_id: ID,
-        oldstate: u8,
-        state: u8,
-    }
-
-    /*
-        Event emitted when buy book event happened.
-            - book_id: the id of the bookinfo.
-            - book_count: buy book amount.
-            - create_at: buy book timestamp.
-    */
-    public struct BuyBookEvent has copy, drop {
-        book_id: ID,
-        book_count: u64,
-        create_at: u64,
     }
 
     //==============================================================================================
@@ -170,6 +91,27 @@ module bookshop::bookshop {
             balance: balance::zero()
         };
         transfer::share_object(shop);
+    }
+
+    public fun new(
+        _: &AdminCap,
+        name_: String,
+        price: u64,
+        c: &Clock,
+        ctx: &mut TxContext
+    ) : Book {
+        let id_ = object::new(ctx);
+        let inner_ = object::uid_to_inner(&id_);
+
+        let book = Book {
+            id: id_,
+            inner: inner_,
+            name: name_,
+            price: price,
+            create_at: timestamp_ms(c),
+            update_at: timestamp_ms(c)
+        };
+        book
     }
 
     /*
@@ -220,7 +162,6 @@ module bookshop::bookshop {
         @param ctx: The transaction context.
     */
     public fun delist(_: &AdminCap, self: &mut Shop, id: ID) {
-    
         df::remove<Listing, u64>(&mut self.id, Listing { id, is_exclusive: false });
     }
 
@@ -244,95 +185,36 @@ module bookshop::bookshop {
         item
     }
 
-    // /*
-    //     get book id
-    //     @param bookinfo: bookinfo struct
-    //     @return : book ID.
-    // */
-    // public fun GetBookInfoId(bookInfo: &BookInfo): ID {
-    //     object::uid_to_inner(&bookInfo.id)
-    // }
+    public fun withdraw_profits(_: &AdminCap, self: &mut Shop, amount: u64, ctx: &mut TxContext) : Coin<SUI> {
+        coin::take(&mut self.balance, amount, ctx)
+    }
 
-    // /*
-    //     get book name
-    //     @param bookinfo: bookinfo struct
-    //     @return : book name.
-    // */
-    // public fun GetBookInfoName(bookInfo: &BookInfo): String {
-    //     bookInfo.name
-    // }
+    /*
+        get shop payment address
+        @param shopInfo: ShopInfo struct
+        @return : payment address.
+    */
+    public fun GetShopInfoPayAddress(self: &Shop): address {
+        self.owner
+    }
 
-    // /*
-    //     get book price
-    //     @param bookinfo: bookinfo struct
-    //     @return : book price.
-    // */
-    // public fun GetBookInfoPrice(bookInfo: &BookInfo): u64 {
-    //     bookInfo.price
-    // }
+    /*
+        get book nft count
+        @param Book: Book struct
+        @return : book nft count.
+    */
+    public fun GetBookCount(self: &Book): u64 {
+        self.price
+    }
 
-    // /*
-    //     get book count
-    //     @param bookinfo: bookinfo struct
-    //     @return : book count.
-    // */
-    // public fun GetBookInfoCount(bookInfo: &BookInfo): u64 {
-    //     bookInfo.count
-    // }
-
-    // /*
-    //     get book created timestamp
-    //     @param bookinfo: bookinfo struct
-    //     @return : created timestamp.
-    // */
-    // public fun GetBookInfoCreateAt(bookInfo: &BookInfo): u64 {
-    //     bookInfo.create_at
-    // }
-
-    // /*
-    //     get book update timestamp
-    //     @param bookinfo: bookinfo struct
-    //     @return : update timestamp.
-    // */
-    // public fun GetBookInfoUpdateAt(bookInfo: &BookInfo): u64 {
-    //     bookInfo.update_at
-    // }
-
-    // /*
-    //     get book state for on-sale (BOOK_STATE_ON_SALE) or off-sale (BOOK_STATE_OFF_SALE)
-    //     @param bookinfo: bookinfo struct
-    //     @return : book state.
-    // */
-    // public fun GetBookInfoState(bookInfo: &BookInfo): u8 {
-    //     bookInfo.state
-    // }
-
-    // /*
-    //     get shop payment address
-    //     @param shopInfo: ShopInfo struct
-    //     @return : payment address.
-    // */
-    // public fun GetShopInfoPayAddress(shopInfo: &ShopInfo): address {
-    //     shopInfo.pay_address
-    // }
-
-    // /*
-    //     get book nft count
-    //     @param Book: Book struct
-    //     @return : book nft count.
-    // */
-    // public fun GetBookCount(Book: &Book): u64 {
-    //     Book.book_count
-    // }
-
-    // /*
-    //     get book nft id
-    //     @param Book: Book struct
-    //     @return : book nft id.
-    // */
-    // public fun GetBookId(Book: &Book): ID {
-    //     Book.book_id
-    // }
+    /*
+        get book nft id
+        @param Book: Book struct
+        @return : book nft id.
+    */
+    public fun GetBookId(self: &Book): ID {
+        self.inner
+    }
 
     fun place_internal(self: &mut Shop, book: Book) {
         self.item_count = self.item_count + 1;
