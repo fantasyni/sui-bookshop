@@ -18,6 +18,9 @@ module bookshop::bookshop {
     //==============================================================================================
     const BOOK_STATE_ON_SALE: u8 = 1;
     const BOOK_STATE_OFF_SALE: u8 = 2;
+    // Add constant for book state
+    const BOOK_STATE_ON_SALE: u8 = 1;
+    const BOOK_STATE_OFF_SALE: u8 = 2;
 
     //==============================================================================================
     //                                  Error codes
@@ -32,6 +35,12 @@ module bookshop::bookshop {
     const EBookPriceNotChanged: u64 = 8;
     const EBookCountNotChanged: u64 = 9;
     const EBookStateNotChanged: u64 = 10;
+        // Add new error codes
+    const EBookNotOnSale: u64 = 3;
+    const EBookAmountNotEnough: u64 = 4;
+    const EBookBuyAmountInvalid: u64 = 5;
+    const EBookBuySuiAmountInvalid: u64 = 6;
+
 
     //==============================================================================================
     //                                  Module structs
@@ -111,6 +120,13 @@ module bookshop::bookshop {
         name: String,
         price: u64,
         count: u64,
+        state: u8,
+    }
+
+    // Add new event for updating book state
+    public struct UpdateBookStateEvent has copy, drop {
+        book_id: ID,
+        oldstate: u8,
         state: u8,
     }
 
@@ -311,6 +327,32 @@ module bookshop::bookshop {
         bookinfo.update_at = clock::timestamp_ms(clock);
     }
 
+    // Add function to update book state
+    public fun update_bookinfo_state(_: &AdminCap, bookinfo: &mut BookInfo, state: u8, clock: &Clock, _ctx: &mut TxContext) {
+        assert!(state == BOOK_STATE_ON_SALE || state == BOOK_STATE_OFF_SALE, "Invalid book state");
+
+        if bookinfo.state != state {
+            event::emit(UpdateBookStateEvent{
+                book_id: object::uid_to_inner(&bookinfo.id),
+                oldstate: bookinfo.state,
+                state: state,
+            });
+            bookinfo.state = state;
+            bookinfo.update_at = clock::timestamp_ms(clock);
+        } else {
+            assert!(false, EBookStateNotChanged);
+        }
+    }
+
+    // Add function to get book information by ID
+    public fun get_bookinfo_by_id(book_id: ID) -> BookInfo {
+        let uid = object::inner_to_uid(book_id);
+        let book_info = object::get_mut::<BookInfo>(&uid).unwrap();
+        book_info
+    }
+
+
+
     /*
         update book state off sale, it will emit UpdateBookStateEvent event
         @param adminCap: the admin role capability controll
@@ -339,26 +381,29 @@ module bookshop::bookshop {
         @param clock: clock for timestamp
         @param ctx: The transaction context.
     */
+    // Improve buy book function
     public fun buy_book(shopInfo: &ShopInfo, bookinfo: &mut BookInfo, sui: Coin<SUI>, amount: u64, clock: &Clock, ctx: &mut TxContext) {
         assert!(bookinfo.state == BOOK_STATE_ON_SALE, EBookNotOnSale);
         assert!(amount > 0, EBookBuyAmountInvalid);
         assert!(bookinfo.count >= amount, EBookAmountNotEnough);
 
-        let sui_amount: u64 = coin::value<SUI>(&sui);
+        let sui_amount = coin::value::<SUI>(&sui);
         assert!(sui_amount > 0, EBookBuySuiAmountInvalid);
 
-        let need_pay: u64 = bookinfo.price * amount;
-        let time_stamp: u64 = clock::timestamp_ms(clock);
+        let need_pay = bookinfo.price * amount;
+        let time_stamp = clock::timestamp_ms(clock);
         assert!(need_pay <= sui_amount, EBuyBookSuiNotEnough);
-        let sender_address: address = tx_context::sender(ctx);
 
-        bookinfo.count = bookinfo.count - amount;
+        let sender_address = tx_context::sender(ctx);
+
+        bookinfo.count -= amount;
+
         let mut sui_balance = coin::into_balance(sui);
 
-        if (sui_amount > need_pay) {
+        if sui_amount > need_pay {
             let left_balance = balance::split(&mut sui_balance, sui_amount - need_pay);
             transfer::public_transfer(coin::from_balance(left_balance, ctx), sender_address);
-        };
+        }
 
         transfer::public_transfer(coin::from_balance(sui_balance, ctx), shopInfo.pay_address);
 
