@@ -220,7 +220,6 @@ module bookshop::bookshop {
         @param ctx: The transaction context.
     */
     public fun delist(_: &AdminCap, self: &mut Shop, id: ID) {
-    
         df::remove<Listing, u64>(&mut self.id, Listing { id, is_exclusive: false });
     }
 
@@ -242,6 +241,10 @@ module bookshop::bookshop {
         coin::put(&mut self.balance, payment);
 
         item
+    }
+
+    public fun withdraw_profits(_: &AdminCap, self: &mut Shop, amount: u64, ctx: &mut TxContext) : Coin<SUI> {
+        coin::take(&mut self.balance, amount, ctx)
     }
 
     /*
