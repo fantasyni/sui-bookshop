@@ -75,9 +75,10 @@ Please report feedback on the linter warnings at https://forums.sui.io
 ## DEPLOY
 
 ### users
-network: testnet
-admin: 0x27067bf2d9988d7beff9c0278c49548d39eb38978905bbcbe39d2bf2ee18d4a7
-buyer: 0xf659e4dff81e081f7c5dc4f82a93c050fc7c58fc669f1b1c00c4a75b5b89f1c4
+network: testnet  
+admin: 0x27067bf2d9988d7beff9c0278c49548d39eb38978905bbcbe39d2bf2ee18d4a7  
+buyer: 0xf659e4dff81e081f7c5dc4f82a93c050fc7c58fc669f1b1c00c4a75b5b89f1c4  
+packgeId: 0x399215e7c4ce2d5cbb37a41a7c2d5319e318e0b0681ead34721b312e28ef5376  
 
 ### publish
 ```bash
