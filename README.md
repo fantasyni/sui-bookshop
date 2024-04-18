@@ -7,22 +7,22 @@ There are two roles in the bookshop, ``Admin`` and ``Consumer``
 ## FUNCTION
 
 ### add_bookinfo
-admin can add book info the bookshop
+add book to the bookshop, it will make BookInfo share object, and emit AddBookEvent event
 
 ### update_bookinfo_name
-admin can update book name
+update book name, it will emit AddBookEvent event
 
 ### update_bookinfo_price
-admin can update book price
+update book price, it will emit UpdateBookPriceEvent event
 
 ### update_bookinfo_count
-admin can update book remain counts
+update book count, it will emit UpdateBookCountEvent event
 
 ### put_on_sale_bookinfo
-admin can update book state of on-sale
+update book state on sale, it will emit UpdateBookStateEvent event
 
 ### put_off_sale_bookinfo
-admin can update book state of off-sale
+update book state off sale, it will emit UpdateBookStateEvent event
 
 ### buy_book
 consumers can buy book in the bookshop with SUI
