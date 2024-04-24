@@ -3,35 +3,22 @@ module bookshop::bookshop {
     //==============================================================================================
     //                                  Dependencies
     //==============================================================================================
-    use sui::object::{Self, UID, ID};
-    use sui::transfer;
-    use sui::tx_context::{Self, TxContext};
+    use sui::tx_context::{sender};
     use sui::coin::{Self, Coin};
     use sui::balance::{Self, Balance};
     use sui::sui::SUI;
-    use sui::clock::{Self, Clock};
-    use std::string::{Self, String};
-    use sui::event;
-
-    //==============================================================================================
-    //                                  Constants
-    //==============================================================================================
-    const BOOK_STATE_ON_SALE: u8 = 1;
-    const BOOK_STATE_OFF_SALE: u8 = 2;
+    use sui::clock::{Self, Clock, timestamp_ms};
+    use std::string::{String};
+    use sui::dynamic_object_field as dof;
+    use sui::dynamic_field as df;
 
     //==============================================================================================
     //                                  Error codes
     //==============================================================================================
-    const EBookNameInvalid: u64 = 1;
-    const EBuyBookSuiNotEnough: u64 = 2;
-    const EBookNotOnSale: u64 = 3;
-    const EBookAmountNotEnough: u64 = 4;
-    const EBookBuyAmountInvalid: u64 = 5;
-    const EBookBuySuiAmountInvalid: u64 = 6;
-    const EBookNameNotChanged: u64 = 7;
-    const EBookPriceNotChanged: u64 = 8;
-    const EBookCountNotChanged: u64 = 9;
-    const EBookStateNotChanged: u64 = 10;
+
+    const EBookBuyAmountInvalid: u64 = 0;
+    const EBookPriceNotChanged: u64 = 1;
+
 
     //==============================================================================================
     //                                  Module structs
@@ -48,130 +35,38 @@ module bookshop::bookshop {
         BOOKSHOP is the one time witness for module init
     */
     public struct BOOKSHOP has drop {
-
     }
+
+    public struct Item has store, copy, drop { id: ID }
+
+    public struct Listing has store, copy, drop { id: ID, is_exclusive: bool }
 
     /*
         ShopInfo manages the shop informations, now contains the payment address for consumers
         - id: the unique id of the ShopInfo
         - pay_adderss: payment address
     */
-    public struct ShopInfo has key {
+    public struct Shop has key {
         id: UID,
-        pay_address: address,
+        owner: address,
+        item_count: u64,
+        balance: Balance<SUI>
     }
 
     /*
-        BookInfo contains the book information
-        - id: the unique id of the book
-        - name: book name
-        - price: book price
-        - count: book remain counts
-        - create_at: book info created timestamp
-        - update_at: book info updated timestamp
-        - state: book state for on-sale (BOOK_STATE_ON_SALE) or off-sale (BOOK_STATE_OFF_SALE)
-    */
-    public struct BookInfo has key {
-        id: UID,
-        name: String,
-        price: u64,
-        count: u64,
-        create_at: u64,
-        update_at: u64,
-        state: u8,
-    }
-
-    /*
-        BookNFT for consumers when they bought books
-        - id: the unique id of the BookNFT
+        Book for consumers when they bought books
+        - id: the unique id of the Book
         - book_id: the unique id of the BookInfo
         - book_count: the count of books
         - create_at: book nft created timestamp
     */
-    public struct BookNFT has key {
+    public struct Book has key, store {
         id: UID,
-        book_id: ID,
-        book_count: u64,
-        create_at: u64,
-    }
-
-    //==============================================================================================
-    //                                  Event structs
-    //==============================================================================================
-    /*
-        Event emitted when add book event happened.
-            - book_id: the id of the bookinfo.
-            - name: book name.
-            - price: book price.
-            - count: book count
-            - state: book state for on-sale (BOOK_STATE_ON_SALE) or off-sale (BOOK_STATE_OFF_SALE)
-    */
-    public struct AddBookEvent has copy, drop {
-        book_id: ID,
+        inner: ID,
         name: String,
         price: u64,
-        count: u64,
-        state: u8,
-    }
-
-    /*
-        Event emitted when update book name event happened.
-            - book_id: the id of the bookinfo.
-            - oldname: book old name.
-            - name: book name.
-    */
-    public struct UpdateBookNameEvent has copy, drop {
-        book_id: ID,
-        oldname: String,
-        name: String,
-    }
-
-    /*
-        Event emitted when update book price event happened.
-            - book_id: the id of the bookinfo.
-            - oldprice: book old price.
-            - price: book price.
-    */
-    public struct UpdateBookPriceEvent has copy, drop {
-        book_id: ID,
-        oldprice: u64,
-        price: u64,
-    }
-
-    /*
-        Event emitted when update book count event happened.
-            - book_id: the id of the bookinfo.
-            - oldcount: book old count.
-            - count: book count.
-    */
-    public struct UpdateBookCountEvent has copy, drop {
-        book_id: ID,
-        oldcount: u64,
-        count: u64,
-    }
-
-    /*
-        Event emitted when update book state event happened.
-            - book_id: the id of the bookinfo.
-            - oldstate: book old state.
-            - state: book state.
-    */
-    public struct UpdateBookStateEvent has copy, drop {
-        book_id: ID,
-        oldstate: u8,
-        state: u8,
-    }
-
-    /*
-        Event emitted when buy book event happened.
-            - book_id: the id of the bookinfo.
-            - book_count: buy book amount.
-            - create_at: buy book timestamp.
-    */
-    public struct BuyBookEvent has copy, drop {
-        book_id: ID,
-        book_count: u64,
         create_at: u64,
+        update_at: u64,
     }
 
     //==============================================================================================
@@ -189,44 +84,34 @@ module bookshop::bookshop {
         };
         transfer::transfer(admin_cap, admin_address);
 
-        let shopInfo = ShopInfo {
+        let shop = Shop {
             id: object::new(ctx),
-            pay_address: admin_address
+            owner: sender(ctx),
+            item_count:0,
+            balance: balance::zero()
         };
-        transfer::share_object(shopInfo);
+        transfer::share_object(shop);
     }
 
-    /*
-        add book to the bookshop, it will make BookInfo share object, and emit AddBookEvent event
-        @param adminCap: the admin role capability controll
-        @param name: book name
-        @param price: book price
-        @param count: book count
-        @param clock: clock for timestamp
-        @param ctx: The transaction context.
-    */
-    public fun add_bookinfo(_: &AdminCap, name: String, price: u64, count: u64, clock: &Clock, ctx: &mut TxContext) {
-        assert!(!string::is_empty(&name), EBookNameInvalid);
-        let uid = object::new(ctx);
-        let id = object::uid_to_inner(&uid);
+    public fun new(
+        _: &AdminCap,
+        name_: String,
+        price: u64,
+        c: &Clock,
+        ctx: &mut TxContext
+    ) : Book {
+        let id_ = object::new(ctx);
+        let inner_ = object::uid_to_inner(&id_);
 
-        transfer::share_object(BookInfo{
-            id: uid,
-            name: name,
+        let book = Book {
+            id: id_,
+            inner: inner_,
+            name: name_,
             price: price,
-            count: count,
-            state: BOOK_STATE_ON_SALE,
-            create_at: clock::timestamp_ms(clock),
-            update_at: clock::timestamp_ms(clock)
-        });
-
-        event::emit(AddBookEvent{
-            book_id : id,
-            name: name,
-            price: price,
-            count: count,
-            state: BOOK_STATE_ON_SALE
-        });
+            create_at: timestamp_ms(c),
+            update_at: timestamp_ms(c)
+        };
+        book
     }
 
     /*
@@ -236,18 +121,9 @@ module bookshop::bookshop {
         @param clock: clock for timestamp
         @param ctx: The transaction context.
     */
-    public fun update_bookinfo_name(_: &AdminCap, bookinfo: &mut BookInfo, name: String, clock: &Clock, _ctx: &mut TxContext) {
-        assert!(!string::is_empty(&name), EBookNameInvalid);
-        assert!(bookinfo.name != name, EBookNameNotChanged);
-
-        event::emit(UpdateBookNameEvent{
-            book_id : object::uid_to_inner(&bookinfo.id),
-            oldname: bookinfo.name,
-            name: name,
-        });
-
-        bookinfo.name = name;
-        bookinfo.update_at = clock::timestamp_ms(clock);
+    public fun new_name(self: &mut Book, name: String, clock: &Clock, ctx: &mut TxContext) {
+        self.name = name;
+        self.update_at = timestamp_ms(clock);
     }
 
     /*
@@ -258,57 +134,24 @@ module bookshop::bookshop {
         @param clock: clock for timestamp
         @param ctx: The transaction context.
     */
-    public fun update_bookinfo_price(_: &AdminCap, bookinfo: &mut BookInfo, price: u64, clock: &Clock, _ctx: &mut TxContext) {
-        assert!(bookinfo.price != price, EBookPriceNotChanged);
-
-        event::emit(UpdateBookPriceEvent{
-            book_id : object::uid_to_inner(&bookinfo.id),
-            oldprice: bookinfo.price,
-            price: price,
-        });
-
-        bookinfo.price = price;
-        bookinfo.update_at = clock::timestamp_ms(clock);
+    public fun new_price(self: &mut Book, price: u64, clock: &Clock, _ctx: &mut TxContext) {
+        assert!(self.price != price, EBookPriceNotChanged);
+        self.price = price;
+        self.update_at = clock::timestamp_ms(clock);
     }
 
-    /*
-        update book count, it will emit UpdateBookCountEvent event
-        @param adminCap: the admin role capability controll
-        @param bookinfo: bookinfo struct
-        @param count: book count
-        @param clock: clock for timestamp
-        @param ctx: The transaction context.
-    */
-    public fun update_bookinfo_count(_: &AdminCap, bookinfo: &mut BookInfo, count: u64, clock: &Clock, _ctx: &mut TxContext) {
-        assert!(bookinfo.count != count, EBookCountNotChanged);
+    // /*
+    //     update book state on sale, it will emit UpdateBookStateEvent event
+    //     @param adminCap: the admin role capability controll
+    //     @param bookinfo: bookinfo struct
+    //     @param clock: clock for timestamp
+    //     @param ctx: The transaction context.
+    // */
+    public fun list(_: &AdminCap, self: &mut Shop, book: Book, price: u64) {
+        let id_ = book.inner;
+        place_internal(self, book);
 
-        event::emit(UpdateBookCountEvent{
-            book_id : object::uid_to_inner(&bookinfo.id),
-            oldcount: bookinfo.count,
-            count: count,
-        });
-
-        bookinfo.count = count;
-        bookinfo.update_at = clock::timestamp_ms(clock);
-    }
-
-    /*
-        update book state on sale, it will emit UpdateBookStateEvent event
-        @param adminCap: the admin role capability controll
-        @param bookinfo: bookinfo struct
-        @param clock: clock for timestamp
-        @param ctx: The transaction context.
-    */
-    public fun put_on_sale_bookinfo(_: &AdminCap, bookinfo: &mut BookInfo, clock: &Clock, _ctx: &mut TxContext) {
-        assert!(bookinfo.state != BOOK_STATE_ON_SALE, EBookStateNotChanged);
-
-        event::emit(UpdateBookStateEvent{
-            book_id : object::uid_to_inner(&bookinfo.id),
-            oldstate: bookinfo.state,
-            state: BOOK_STATE_ON_SALE,
-        });
-        bookinfo.state = BOOK_STATE_ON_SALE;
-        bookinfo.update_at = clock::timestamp_ms(clock);
+        df::add(&mut self.id, Listing { id: id_, is_exclusive: false }, price);
     }
 
     /*
@@ -318,16 +161,8 @@ module bookshop::bookshop {
         @param clock: clock for timestamp
         @param ctx: The transaction context.
     */
-    public fun put_off_sale_bookinfo(_: &AdminCap, bookinfo: &mut BookInfo, clock: &Clock, _ctx: &mut TxContext) {
-        assert!(bookinfo.state != BOOK_STATE_OFF_SALE, EBookStateNotChanged);
-
-        event::emit(UpdateBookStateEvent{
-            book_id : object::uid_to_inner(&bookinfo.id),
-            oldstate: bookinfo.state,
-            state: BOOK_STATE_OFF_SALE,
-        });
-        bookinfo.state = BOOK_STATE_OFF_SALE;
-        bookinfo.update_at = clock::timestamp_ms(clock);
+    public fun delist(_: &AdminCap, self: &mut Shop, id: ID) {
+        df::remove<Listing, u64>(&mut self.id, Listing { id, is_exclusive: false });
     }
 
     /*
@@ -339,105 +174,19 @@ module bookshop::bookshop {
         @param clock: clock for timestamp
         @param ctx: The transaction context.
     */
-    public fun buy_book(shopInfo: &ShopInfo, bookinfo: &mut BookInfo, sui: Coin<SUI>, amount: u64, clock: &Clock, ctx: &mut TxContext) {
-        assert!(bookinfo.state == BOOK_STATE_ON_SALE, EBookNotOnSale);
-        assert!(amount > 0, EBookBuyAmountInvalid);
-        assert!(bookinfo.count >= amount, EBookAmountNotEnough);
+    public fun purchase(self: &mut Shop, id: ID, payment: Coin<SUI>) : Book {
+        let price = df::remove<Listing, u64>(&mut self.id, Listing { id, is_exclusive: false });
+        let item = dof::remove<Item, Book>(&mut self.id, Item { id });
 
-        let sui_amount: u64 = coin::value<SUI>(&sui);
-        assert!(sui_amount > 0, EBookBuySuiAmountInvalid);
+        self.item_count = self.item_count - 1;
+        assert!(price == payment.value(), EBookBuyAmountInvalid);
+        coin::put(&mut self.balance, payment);
 
-        let need_pay: u64 = bookinfo.price * amount;
-        let time_stamp: u64 = clock::timestamp_ms(clock);
-        assert!(need_pay <= sui_amount, EBuyBookSuiNotEnough);
-        let sender_address: address = tx_context::sender(ctx);
-
-        bookinfo.count = bookinfo.count - amount;
-        let mut sui_balance = coin::into_balance(sui);
-
-        if (sui_amount > need_pay) {
-            let left_balance = balance::split(&mut sui_balance, sui_amount - need_pay);
-            transfer::public_transfer(coin::from_balance(left_balance, ctx), sender_address);
-        };
-
-        transfer::public_transfer(coin::from_balance(sui_balance, ctx), shopInfo.pay_address);
-
-        let bookNFT = BookNFT {
-            id: object::new(ctx),
-            book_id: object::uid_to_inner(&bookinfo.id),
-            book_count: amount,
-            create_at: time_stamp
-        };
-        transfer::transfer(bookNFT, sender_address);
-
-        event::emit(BuyBookEvent{
-            book_id : object::uid_to_inner(&bookinfo.id),
-            book_count: amount,
-            create_at: time_stamp
-        });
+        item
     }
 
-    /*
-        get book id
-        @param bookinfo: bookinfo struct
-        @return : book ID.
-    */
-    public fun GetBookInfoId(bookInfo: &BookInfo): ID {
-        object::uid_to_inner(&bookInfo.id)
-    }
-
-    /*
-        get book name
-        @param bookinfo: bookinfo struct
-        @return : book name.
-    */
-    public fun GetBookInfoName(bookInfo: &BookInfo): String {
-        bookInfo.name
-    }
-
-    /*
-        get book price
-        @param bookinfo: bookinfo struct
-        @return : book price.
-    */
-    public fun GetBookInfoPrice(bookInfo: &BookInfo): u64 {
-        bookInfo.price
-    }
-
-    /*
-        get book count
-        @param bookinfo: bookinfo struct
-        @return : book count.
-    */
-    public fun GetBookInfoCount(bookInfo: &BookInfo): u64 {
-        bookInfo.count
-    }
-
-    /*
-        get book created timestamp
-        @param bookinfo: bookinfo struct
-        @return : created timestamp.
-    */
-    public fun GetBookInfoCreateAt(bookInfo: &BookInfo): u64 {
-        bookInfo.create_at
-    }
-
-    /*
-        get book update timestamp
-        @param bookinfo: bookinfo struct
-        @return : update timestamp.
-    */
-    public fun GetBookInfoUpdateAt(bookInfo: &BookInfo): u64 {
-        bookInfo.update_at
-    }
-
-    /*
-        get book state for on-sale (BOOK_STATE_ON_SALE) or off-sale (BOOK_STATE_OFF_SALE)
-        @param bookinfo: bookinfo struct
-        @return : book state.
-    */
-    public fun GetBookInfoState(bookInfo: &BookInfo): u8 {
-        bookInfo.state
+    public fun withdraw_profits(_: &AdminCap, self: &mut Shop, amount: u64, ctx: &mut TxContext) : Coin<SUI> {
+        coin::take(&mut self.balance, amount, ctx)
     }
 
     /*
@@ -445,26 +194,31 @@ module bookshop::bookshop {
         @param shopInfo: ShopInfo struct
         @return : payment address.
     */
-    public fun GetShopInfoPayAddress(shopInfo: &ShopInfo): address {
-        shopInfo.pay_address
+    public fun GetShopInfoPayAddress(self: &Shop): address {
+        self.owner
     }
 
     /*
         get book nft count
-        @param bookNFT: BookNFT struct
+        @param Book: Book struct
         @return : book nft count.
     */
-    public fun GetBookNFTCount(bookNFT: &BookNFT): u64 {
-        bookNFT.book_count
+    public fun GetBookCount(self: &Book): u64 {
+        self.price
     }
 
     /*
         get book nft id
-        @param bookNFT: BookNFT struct
+        @param Book: Book struct
         @return : book nft id.
     */
-    public fun GetBookNFTId(bookNFT: &BookNFT): ID {
-        bookNFT.book_id
+    public fun GetBookId(self: &Book): ID {
+        self.inner
+    }
+
+    fun place_internal(self: &mut Shop, book: Book) {
+        self.item_count = self.item_count + 1;
+        dof::add(&mut self.id, Item { id: object::id(&book) }, book)
     }
 
     #[test_only]
