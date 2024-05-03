@@ -10,15 +10,14 @@ module bookshop::bookshop {
     use sui::clock::{Self, Clock, timestamp_ms};
     use std::string::{String};
     use sui::dynamic_object_field as dof;
-    use sui::dynamic_field as df;
 
     //==============================================================================================
     //                                  Error codes
     //==============================================================================================
 
-    const EBookBuyAmountInvalid: u64 = 0;
+    const EInsufficientPayment: u64 = 0;
     const EBookPriceNotChanged: u64 = 1;
-
+    const EItemNotAvailable: u64 = 2;
 
     //==============================================================================================
     //                                  Module structs
@@ -31,15 +30,7 @@ module bookshop::bookshop {
         id: UID,
     }
 
-    /*
-        BOOKSHOP is the one time witness for module init
-    */
-    public struct BOOKSHOP has drop {
-    }
-
-    public struct Item has store, copy, drop { id: ID }
-
-    public struct Listing has store, copy, drop { id: ID, is_exclusive: bool }
+    public struct Listing has store, copy, drop { id: ID}
 
     /*
         ShopInfo manages the shop informations, now contains the payment address for consumers
@@ -57,7 +48,6 @@ module bookshop::bookshop {
         Book for consumers when they bought books
         - id: the unique id of the Book
         - book_id: the unique id of the BookInfo
-        - book_count: the count of books
         - create_at: book nft created timestamp
     */
     public struct Book has key, store {
@@ -77,7 +67,7 @@ module bookshop::bookshop {
         transfer AdminCap to the admin
         make ShopInfo share object
     */
-    fun init(_otw: BOOKSHOP, ctx: &mut TxContext) {
+    fun init(ctx: &mut TxContext) {
         let admin_address = tx_context::sender(ctx);
         let admin_cap = AdminCap {
             id: object::new(ctx)
@@ -121,7 +111,7 @@ module bookshop::bookshop {
         @param clock: clock for timestamp
         @param ctx: The transaction context.
     */
-    public fun new_name(self: &mut Book, name: String, clock: &Clock, ctx: &mut TxContext) {
+    public fun new_name(_: &AdminCap, self: &mut Book, name: String, clock: &Clock, _ctx: &mut TxContext) {
         self.name = name;
         self.update_at = timestamp_ms(clock);
     }
@@ -134,7 +124,7 @@ module bookshop::bookshop {
         @param clock: clock for timestamp
         @param ctx: The transaction context.
     */
-    public fun new_price(self: &mut Book, price: u64, clock: &Clock, _ctx: &mut TxContext) {
+    public fun new_price(_: &AdminCap, self: &mut Book, price: u64, clock: &Clock, _ctx: &mut TxContext) {
         assert!(self.price != price, EBookPriceNotChanged);
         self.price = price;
         self.update_at = clock::timestamp_ms(clock);
@@ -147,11 +137,11 @@ module bookshop::bookshop {
     //     @param clock: clock for timestamp
     //     @param ctx: The transaction context.
     // */
-    public fun list(_: &AdminCap, self: &mut Shop, book: Book, price: u64) {
+    public fun list(_: &AdminCap, self: &mut Shop, book: Book) {
         let id_ = book.inner;
-        place_internal(self, book);
-
-        df::add(&mut self.id, Listing { id: id_, is_exclusive: false }, price);
+        self.item_count = self.item_count + 1;
+        //dof: [object, name, value]: [shop_id, Listing(which is book_id), book]
+        dof::add(&mut self.id, Listing { id: id_}, book)
     }
 
     /*
@@ -161,8 +151,8 @@ module bookshop::bookshop {
         @param clock: clock for timestamp
         @param ctx: The transaction context.
     */
-    public fun delist(_: &AdminCap, self: &mut Shop, id: ID) {
-        df::remove<Listing, u64>(&mut self.id, Listing { id, is_exclusive: false });
+    public fun delist(_: &AdminCap, self: &mut Shop, id: ID): Book {
+        dof::remove<Listing, Book>(&mut self.id, Listing { id })
     }
 
     /*
@@ -174,19 +164,21 @@ module bookshop::bookshop {
         @param clock: clock for timestamp
         @param ctx: The transaction context.
     */
-    public fun purchase(self: &mut Shop, id: ID, payment: Coin<SUI>) : Book {
-        let price = df::remove<Listing, u64>(&mut self.id, Listing { id, is_exclusive: false });
-        let item = dof::remove<Item, Book>(&mut self.id, Item { id });
-
+    #[allow(lint(self_transfer))]
+    public fun purchase(self: &mut Shop, id: ID, payment: &mut Coin<SUI>, ctx: &mut TxContext) {
+        let sender = tx_context::sender(ctx);
+        assert!(dof::exists_(&self.id, Listing { id }), EItemNotAvailable);
+        let book = dof::remove<Listing, Book>(&mut self.id, Listing { id });
         self.item_count = self.item_count - 1;
-        assert!(price == payment.value(), EBookBuyAmountInvalid);
-        coin::put(&mut self.balance, payment);
-
-        item
+        assert!(book.price <= payment.value(), EInsufficientPayment);
+        let payment_coin = coin::split(payment, book.price, ctx);
+        coin::put(&mut self.balance, payment_coin);
+        transfer::public_transfer(book, sender);
     }
 
-    public fun withdraw_profits(_: &AdminCap, self: &mut Shop, amount: u64, ctx: &mut TxContext) : Coin<SUI> {
-        coin::take(&mut self.balance, amount, ctx)
+    public fun withdraw_profits(_: &AdminCap, self: &mut Shop, amount: u64, ctx: &mut TxContext){
+        let sender = tx_context::sender(ctx);
+        transfer::public_transfer(coin::take(&mut self.balance, amount, ctx), sender);
     }
 
     /*
@@ -199,15 +191,6 @@ module bookshop::bookshop {
     }
 
     /*
-        get book nft count
-        @param Book: Book struct
-        @return : book nft count.
-    */
-    public fun GetBookCount(self: &Book): u64 {
-        self.price
-    }
-
-    /*
         get book nft id
         @param Book: Book struct
         @return : book nft id.
@@ -216,14 +199,25 @@ module bookshop::bookshop {
         self.inner
     }
 
-    fun place_internal(self: &mut Shop, book: Book) {
-        self.item_count = self.item_count + 1;
-        dof::add(&mut self.id, Item { id: object::id(&book) }, book)
+    public fun GetBookName(self: &Book): String {
+        self.name
+    }
+
+    public fun GetBookPrice(self: &Book): u64 {
+        self.price
+    }
+
+    public fun GetBookCreateAt(self: &Book): u64 {
+        self.create_at
+    }
+
+    public fun GetBookUpdateAt(self: &Book): u64 {
+        self.update_at
     }
 
     #[test_only]
     public fun init_for_testing(ctx: &mut TxContext) {
-        init(BOOKSHOP {}, ctx);
+        init(ctx);
     }
 }
 
