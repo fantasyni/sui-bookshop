@@ -5,14 +5,14 @@ compiled_package_info:
     bookshop: "0000000000000000000000000000000000000000000000000000000000000000"
     std: "0000000000000000000000000000000000000000000000000000000000000001"
     sui: "0000000000000000000000000000000000000000000000000000000000000002"
-  source_digest: 83E614005A34A6246542C4A060704226295B917A56D0C09C0B4A451615F5BB17
+  source_digest: E98CA13E98BB28A573BEB345FAA3F50BB497233CBB21743D1DC368FB4E62CD87
   build_flags:
-    dev_mode: false
-    test_mode: false
+    dev_mode: true
+    test_mode: true
     generate_docs: false
     install_dir: ~
     force_recompilation: false
-    lock_file: "./Move.lock"
+    lock_file: ~
     fetch_deps_only: false
     skip_fetch_latest_git_deps: false
     default_flavor: sui
